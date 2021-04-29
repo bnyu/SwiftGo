@@ -34,33 +34,15 @@ public final class Chan<T> {
 
     struct GoCase {
         let g: Goroutine
-        let caseIndex: Int
-    }
-
-    struct SendCase {
-        let wait: GoCase
-        let data: T
-
-        init(_ g: Goroutine, caseIndex: Int = 0, _ data: T) {
-            wait = GoCase(g: g, caseIndex: caseIndex)
-            self.data = data
-        }
-    }
-
-    struct ReceiveCase {
-        let wait: GoCase
+        let index: Int
         var data: T?
-
-        init(_ g: Goroutine, caseIndex: Int = 0) {
-            wait = GoCase(g: g, caseIndex: caseIndex)
-        }
     }
 
-    struct WaitGo<U> {
-        var first: Linked<U>?
-        var last: Linked<U>?
+    struct WaitGo {
+        var first: Linked<GoCase>?
+        var last: Linked<GoCase>?
 
-        mutating func dequeue() -> U? {
+        mutating func dequeue() -> GoCase? {
             guard let x = first else {
                 return nil
             }
@@ -75,7 +57,7 @@ public final class Chan<T> {
             return x.value
         }
 
-        mutating func enqueue(_ value: U) {
+        mutating func enqueue(_ value: GoCase) {
             let wg = Linked(value)
             guard let last = last else {
                 first = wg
@@ -92,8 +74,8 @@ public final class Chan<T> {
     private var buffer: Array<T?> = []
     private var sendIndex = 0
     private var recvIndex = 0
-    var recvWait: WaitGo<ReceiveCase>
-    var sendWait: WaitGo<SendCase>
+    var recvWait: WaitGo
+    var sendWait: WaitGo
 
     let size: Int
 
@@ -106,6 +88,14 @@ public final class Chan<T> {
         recvWait = WaitGo()
         sendWait = WaitGo()
         self.size = size
+    }
+
+    func recvWaitEnqueue(_ g: Goroutine, index: Int = 0) {
+        recvWait.enqueue(GoCase(g: g, index: index, data: nil))
+    }
+
+    func sendWaitEnqueue(_ g: Goroutine, index: Int = 0, data: T) {
+        sendWait.enqueue(GoCase(g: g, index: index, data: data))
     }
 
     func dequeueBuff() -> T {
@@ -150,35 +140,42 @@ public final class Chan<T> {
 
     func receive() -> (T?, Bool) {
         if let w = sendWait.dequeue() {
-            let data: T
-            if size > 0 {
-                data = recvAndSend(data: w.data)
+            if var data = w.data {
+                if size > 0 {
+                    data = recvAndSend(data: data)
+                }
+                w.g.resume(index: w.index)
+                return (data, true)
             } else {
-                data = w.data
+                fatalError("received nil data")
             }
-            w.wait.g.assume(caseIndex: w.wait.caseIndex)
-            return (data, true)
         } else if count > 0 {
             return (dequeueBuff(), true)
         }
         return (nil, false)
     }
 
-    func receive(current g: Goroutine, caseIndex: Int = 0) -> T? {
-        let (data, ok) = receive()
+    func receive(current g: Goroutine, index: Int = 0) -> T? {
+        var (data, ok) = receive()
         if ok {
             return data
         }
-        recvWait.enqueue(ReceiveCase(g, caseIndex: caseIndex))
-        g.supped()
-        return g.message as? T
+        recvWaitEnqueue(g)
+        g.suspend()
+        let message = g.message
+        if message is T? {
+            data = message as? T
+            g.message = nil
+            return data
+        }
+        fatalError("receive data wrong type")
     }
 
 
     func send(_ data: T) -> Bool {
         if let w = recvWait.dequeue() {
-            w.wait.g.message = data
-            w.wait.g.assume(caseIndex: w.wait.caseIndex)
+            w.g.message = data
+            w.g.resume(index: w.index)
             return true
         } else if size > count {
             enqueueBuff(data: data)
@@ -187,12 +184,12 @@ public final class Chan<T> {
         return false
     }
 
-    func send(current g: Goroutine, caseIndex: Int = 0, _ data: T) {
+    func send(current g: Goroutine, _ data: T) {
         if send(data) {
             return
         }
-        sendWait.enqueue(SendCase(g, caseIndex: caseIndex, data))
-        g.supped()
+        sendWaitEnqueue(g, data: data)
+        g.suspend()
     }
 
 }
