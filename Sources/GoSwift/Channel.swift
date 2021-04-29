@@ -20,29 +20,36 @@ protocol ReceiveChannel {
     static prefix func <-(ch: Self) -> Element?
 }
 
-final class Linked<U> {
-    weak var prev: Linked<U>?
-    var next: Linked<U>?
-    let value: U
-
-    init(_ value: U) {
-        self.value = value
-    }
-}
 
 public final class Chan<T> {
 
-    struct GoCase {
-        let g: Goroutine
-        let index: Int
-        var data: T?
-    }
-
     struct WaitGo {
-        var first: Linked<GoCase>?
-        var last: Linked<GoCase>?
+        var first: GoCase<T>?
+        var last: GoCase<T>?
 
-        mutating func dequeue() -> GoCase? {
+        mutating func remove(_ value: GoCase<T>) {
+            if let prev = value.prev {
+                if let next = value.next {
+                    next.prev = prev
+                    prev.next = next
+                    value.prev = nil
+                    value.next = nil
+                } else {
+                    prev.next = nil
+                    last = prev
+                    value.prev = nil
+                }
+            } else if let next = value.next {
+                first = next
+                value.next = nil
+            } else {
+                assert(first === value && last === value)
+                first = nil
+                last = nil
+            }
+        }
+
+        mutating func dequeue() -> GoCase<T>? {
             guard let x = first else {
                 return nil
             }
@@ -54,18 +61,18 @@ public final class Chan<T> {
                 first = nil
                 last = nil
             }
-            return x.value
+            return x
         }
 
-        mutating func enqueue(_ value: GoCase) {
-            let wg = Linked(value)
+        mutating func enqueue(_ value: GoCase<T>) {
             guard let last = last else {
-                first = wg
-                last = wg
+                first = value
+                last = value
                 return
             }
-            last.next = wg
-            self.last = wg
+            value.prev = last
+            last.next = value
+            self.last = value
         }
     }
 
@@ -88,14 +95,6 @@ public final class Chan<T> {
         recvWait = WaitGo()
         sendWait = WaitGo()
         self.size = size
-    }
-
-    func recvWaitEnqueue(_ g: Goroutine, index: Int = 0) {
-        recvWait.enqueue(GoCase(g: g, index: index, data: nil))
-    }
-
-    func sendWaitEnqueue(_ g: Goroutine, index: Int = 0, data: T) {
-        sendWait.enqueue(GoCase(g: g, index: index, data: data))
     }
 
     func dequeueBuff() -> T {
@@ -144,7 +143,8 @@ public final class Chan<T> {
                 if size > 0 {
                     data = recvAndSend(data: data)
                 }
-                w.g.resume(index: w.index)
+                w.g.selectIndex = w.index
+                w.g.resume()
                 return (data, true)
             } else {
                 fatalError("received nil data")
@@ -160,7 +160,7 @@ public final class Chan<T> {
         if ok {
             return data
         }
-        recvWaitEnqueue(g)
+        recvWait.enqueue(GoCase(g))
         g.suspend()
         let message = g.message
         if message is T? {
@@ -175,7 +175,8 @@ public final class Chan<T> {
     func send(_ data: T) -> Bool {
         if let w = recvWait.dequeue() {
             w.g.message = data
-            w.g.resume(index: w.index)
+            w.g.selectIndex = w.index
+            w.g.resume()
             return true
         } else if size > count {
             enqueueBuff(data: data)
@@ -188,7 +189,7 @@ public final class Chan<T> {
         if send(data) {
             return
         }
-        sendWaitEnqueue(g, data: data)
+        sendWait.enqueue(GoCase(g, data: data))
         g.suspend()
     }
 
