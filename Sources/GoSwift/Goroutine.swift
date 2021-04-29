@@ -24,11 +24,18 @@ final class GoCase<T> {
     }
 }
 
+//enum SelectKind: Int {
+//    case Null
+//    case Send
+//    case Receive
+//    case Default
+//}
+
 public final class Goroutine {
     var message: Any?
     var selectIndex = -1
 
-    var execute: DispatchWorkItem!
+    private var execute: DispatchWorkItem!
 
     init(closure: @escaping (Goroutine) -> ()) {
         execute = DispatchWorkItem(block: { closure(self) })
@@ -46,37 +53,53 @@ public final class Goroutine {
         execute.perform()
     }
 
+    private func lockAll(list: [NSLock]) {
+        var p: NSLock?
+        for l in list {
+            if p !== l {
+                l.lock()
+            }
+            p = l
+        }
+    }
+
+    private func unlockAll(list: [NSLock]) {
+        var p: NSLock?
+        for l in list {
+            if p !== l {
+                l.unlock()
+            }
+            p = l
+        }
+    }
+
     private func select(_ cases: [Select<Any>], _ block: (() -> ())?) {
         let indices = cases.indices
 
-        var matched = false
+        var closure: (() -> ())?
         loop: for i in indices {
             let c = cases[i]
             switch c {
             case .send(let ch, let data, let block):
                 if ch.send(data) {
-                    defer {
-                        block()
-                    }
-                    matched = true
+                    closure = block
                     break loop
                 }
             case .receive(let ch, let block):
                 let (data, ok) = ch.receive()
                 if ok {
-                    defer {
+                    closure = {
                         block(data)
                     }
-                    matched = true
                     break loop
                 }
             }
         }
 
-        if matched {
+        if let closure = closure {
+            closure()
             return
-        }
-        if let block = block {
+        } else if let block = block {
             block()
             return
         }
@@ -96,6 +119,7 @@ public final class Goroutine {
                 ch.recvWait.enqueue(gc)
             }
         }
+
         suspend()
         // resumed by another goroutine
         // remove other waiting

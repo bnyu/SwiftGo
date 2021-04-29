@@ -77,7 +77,7 @@ public final class Chan<T> {
     }
 
     let locker = NSLock()
-    var count = 0
+    private var count = 0
     private var buffer: Array<T?> = []
     private var sendIndex = 0
     private var recvIndex = 0
