@@ -24,13 +24,6 @@ final class GoCase<T> {
     }
 }
 
-//enum SelectKind: Int {
-//    case Null
-//    case Send
-//    case Receive
-//    case Default
-//}
-
 public final class Goroutine {
     var message: Any?
     var selectIndex = -1
@@ -74,6 +67,13 @@ public final class Goroutine {
     }
 
     private func select(_ cases: [Select<Any>], _ block: (() -> ())?) {
+        var lockers = cases.map { c in
+            c.locker()
+        }
+        // avoid deadlock
+        lockers.sort(by: { l1, l2 in l1.hash > l2.hash })
+        lockAll(list: lockers)
+
         let indices = cases.indices
 
         var closure: (() -> ())?
@@ -97,9 +97,11 @@ public final class Goroutine {
         }
 
         if let closure = closure {
+            unlockAll(list: lockers)
             closure()
             return
         } else if let block = block {
+            unlockAll(list: lockers)
             block()
             return
         }
@@ -120,9 +122,11 @@ public final class Goroutine {
             }
         }
 
+        unlockAll(list: lockers)
         suspend()
         // resumed by another goroutine
         // remove other waiting
+        lockAll(list: lockers)
         for i in indices {
             if i != selectIndex {
                 let c = cases[i]
@@ -135,6 +139,7 @@ public final class Goroutine {
                 }
             }
         }
+        unlockAll(list: lockers)
 
         let c = cases[selectIndex]
         switch c {
@@ -160,6 +165,15 @@ public final class Goroutine {
 public enum Select<T> {
     case send(ch: Chan<T>, data: T, block: () -> ())
     case receive(ch: Chan<T>, block: (_ data: T?) -> ())
+
+    fileprivate func locker() -> NSLock {
+        switch self {
+        case .send(let ch, _, _):
+            return ch.locker
+        case .receive(let ch, _):
+            return ch.locker
+        }
+    }
 }
 
 public func go(_ closure: @escaping (Goroutine) -> ()) {
