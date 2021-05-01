@@ -86,7 +86,7 @@ public final class Chan<T> {
 
     let size: Int
 
-    init(_ size: Int = 0) {
+    public init(_ size: Int = 0) {
         if size < 0 {
             fatalError("negative channel size")
         } else if size > 0 && T.self != Void.self {

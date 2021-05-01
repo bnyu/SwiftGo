@@ -28,22 +28,26 @@ public final class Goroutine {
     var message: Any?
     var selectIndex = -1
 
-    private var execute: DispatchWorkItem!
+    private let semaphore: DispatchGroup
+    private var execution: DispatchWorkItem!
 
     init(closure: @escaping (Goroutine) -> ()) {
-        execute = DispatchWorkItem(block: { closure(self) })
+        semaphore = DispatchGroup()
+        execution = DispatchWorkItem(block: { closure(self) })
     }
 
     func start() {
-        DispatchQueue.global().async(execute: execute)
+        DispatchQueue.global().async(execute: execution)
     }
 
     func suspend() {
-        execute.wait()
+        print("suspend")
+        semaphore.suspend()
     }
 
     func resume() {
-        execute.perform()
+        print("resume")
+        semaphore.resume()
     }
 
     private func lockAll(list: [NSLock]) {
@@ -66,7 +70,8 @@ public final class Goroutine {
         }
     }
 
-    private func select(_ cases: [Select<Any>], _ block: (() -> ())?) {
+    // need variadic generics?
+    private func select<T>(_ cases: [Select<T>], _ block: (() -> ())?) {
         var lockers = cases.map { c in
             c.locker()
         }
@@ -107,7 +112,7 @@ public final class Goroutine {
         }
 
         // waiting on all cases
-        var waitCases: [GoCase<Any>?] = Array(repeating: nil, count: indices.count)
+        var waitCases: [GoCase<T>?] = Array(repeating: nil, count: indices.count)
         for i in indices {
             let c = cases[i]
             switch c {
@@ -116,7 +121,7 @@ public final class Goroutine {
                 waitCases[i] = gc
                 ch.sendWait.enqueue(gc)
             case .receive(let ch, _):
-                let gc = GoCase<Any>(self, index: i)
+                let gc = GoCase<T>(self, index: i)
                 waitCases[i] = gc
                 ch.recvWait.enqueue(gc)
             }
@@ -146,24 +151,28 @@ public final class Goroutine {
         case .send(_, _, let block):
             block()
         case .receive(_, let block):
-            block(message)
+            block(message as? T)
             message = nil
         }
     }
 
-    public func select(cases: Select<Any>...) {
+    public func select<T>(cases: Select<T>...) {
         select(cases, nil)
     }
 
-    public func select(cases: Select<Any>..., default block: @escaping () -> ()) {
+    public func select<T>(cases: Select<T>..., default block: @escaping () -> ()) {
         select(cases, block)
+    }
+
+    public func sleep(milliseconds: Int) {
+        _ = semaphore.wait(timeout: DispatchTime.now() + DispatchTimeInterval.milliseconds(milliseconds))
     }
 
 }
 
 
 public enum Select<T> {
-    case send(ch: Chan<T>, data: T, block: () -> ())
+    case send(ch: Chan<T>, data: T, block: @autoclosure () -> ())
     case receive(ch: Chan<T>, block: (_ data: T?) -> ())
 
     fileprivate func locker() -> NSLock {

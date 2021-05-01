@@ -1,4 +1,4 @@
-// swift-tools-version:5.4
+// swift-tools-version:5.3
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -10,6 +10,7 @@ let package = Package(
         .library(
             name: "SwiftGo",
             targets: ["SwiftGo"]),
+        .executable(name: "example", targets: ["example"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -20,6 +21,9 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "SwiftGo",
-            dependencies: [])
+            dependencies: []),
+        .target(
+            name: "example",
+            dependencies: ["SwiftGo"])
     ]
 )
