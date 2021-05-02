@@ -28,26 +28,55 @@ public final class Goroutine {
     var message: Any?
     var selectIndex = -1
 
-    private let semaphore: DispatchGroup
+    private var rands = (UInt32(0), UInt32(0))
+
+    private let semaphore: DispatchSemaphore
     private var execution: DispatchWorkItem!
 
     init(closure: @escaping (Goroutine) -> ()) {
-        semaphore = DispatchGroup()
+        semaphore = DispatchSemaphore(value: 0)
         execution = DispatchWorkItem(block: { closure(self) })
     }
 
     func start() {
-        DispatchQueue.global().async(execute: execution)
+        let prt = memoryAddress(&rands)
+        rands.0 = UInt32(prt >> 32)
+        rands.1 = UInt32(prt & (UInt.max >> 32))
+        if rands.0 == 0 { //32bit machine
+            rands.0 = UInt32(prt >> 16)
+            rands.1 = UInt32((prt << 16) >> 16)
+        }
+
+        let queue = DispatchQueue.global()
+        semaphore.setTarget(queue: queue)
+        semaphore.activate()
+        queue.async(execute: execution)
     }
 
     func suspend() {
-        print("suspend")
-        semaphore.suspend()
+        semaphore.wait()
     }
 
     func resume() {
-        print("resume")
-        semaphore.resume()
+        semaphore.signal()
+    }
+
+    private func randIndex(count: Int) -> [Int] {
+        var indices = Array(repeating: 0, count: count)
+        for i in 1..<count {
+            let n = Int(fastRand(n: UInt32(i + 1)))
+            indices[n] = indices[i]
+            indices[i] = n
+        }
+        return indices
+    }
+
+    // XorShift
+    private func fastRand(n: UInt32) -> UInt32 {
+        rands.0 ^= rands.0 << 17
+        rands.0 = rands.0 ^ rands.1 ^ rands.0 >> 7 ^ rands.1 >> 16
+        rands = (rands.1, rands.0)
+        return UInt32((UInt64(rands.0 + rands.1) &* UInt64(n)) >> 32)
     }
 
     private func lockAll(list: [NSLock]) {
@@ -72,6 +101,16 @@ public final class Goroutine {
 
     // need variadic generics?
     private func select<T>(_ cases: [Select<T>], _ block: (() -> ())?) {
+        if cases.isEmpty {
+            if let block = block {
+                block()
+                return
+            }
+            // block forever
+            suspend()
+            return
+        }
+
         var lockers = cases.map { c in
             c.locker()
         }
@@ -79,7 +118,7 @@ public final class Goroutine {
         lockers.sort(by: { l1, l2 in l1.hash > l2.hash })
         lockAll(list: lockers)
 
-        let indices = cases.indices
+        let indices = randIndex(count: cases.count)
 
         var closure: (() -> ())?
         loop: for i in indices {
@@ -170,6 +209,9 @@ public final class Goroutine {
 
 }
 
+@inlinable func memoryAddress(_ p: UnsafeRawPointer) -> UInt {
+    UInt(bitPattern: p)
+}
 
 public enum Select<T> {
     case send(ch: Chan<T>, data: T, block: @autoclosure () -> ())

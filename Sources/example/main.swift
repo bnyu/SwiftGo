@@ -22,12 +22,11 @@ go { _ in
         }
     }
 
-    print("prepare for something")
-
     go {
         print("start send data")
         for i in 1...10000 {
-            $0.select(cases: .send(ch: dataCh, data: i, block: print("<- \(i)")))
+            $0.select(cases: .send(ch: dataCh, data: i, block: print("<- \(i)")),
+                    .send(ch: dataCh, data: -i, block: print("<- \(-i)")))
         }
     }
 }
@@ -39,4 +38,7 @@ go {
     $0.select(cases: .send(ch: quitCh, data: -1, block: print("send quit single")))
 }
 
-Thread.sleep(forTimeInterval: 10000)
+for _ in 0...100 {
+    print("==")
+    Thread.sleep(forTimeInterval: 10000)
+}
