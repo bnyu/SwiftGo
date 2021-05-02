@@ -16,8 +16,8 @@ go { _ in
         print("start receive data")
         var loop = true
         while loop {
-            $0.select(cases: .receive(ch: dataCh, block: { data in print("\(data!) <-") }),
-                    .receive(ch: quitCh, block: { info in loop = false; print("quit cause \(info!)") })
+            $0.select(cases: .receive(ch: dataCh, block: { data in print("\(data) <-") }),
+                    .receive(ch: quitCh, block: { info in loop = false; print("quit cause \(info)") })
             )
         }
     }
@@ -39,6 +39,5 @@ go {
 }
 
 for _ in 0...100 {
-    print("==")
     Thread.sleep(forTimeInterval: 10000)
 }

@@ -25,7 +25,6 @@ final class GoCase<T> {
 }
 
 public final class Goroutine {
-    var message: Any?
     var selectIndex = -1
 
     private var rands = (UInt32(0), UInt32(0))
@@ -130,8 +129,7 @@ public final class Goroutine {
                     break loop
                 }
             case .receive(let ch, let block):
-                let (data, ok) = ch.receive()
-                if ok {
+                if let data = ch.receive() {
                     closure = {
                         block(data)
                     }
@@ -186,12 +184,12 @@ public final class Goroutine {
         unlockAll(list: lockers)
 
         let c = cases[selectIndex]
+        let w = waitCases[selectIndex]
         switch c {
         case .send(_, _, let block):
             block()
         case .receive(_, let block):
-            block(message as? T)
-            message = nil
+            block(w!.data!)
         }
     }
 
@@ -215,7 +213,7 @@ public final class Goroutine {
 
 public enum Select<T> {
     case send(ch: Chan<T>, data: T, block: @autoclosure () -> ())
-    case receive(ch: Chan<T>, block: (_ data: T?) -> ())
+    case receive(ch: Chan<T>, block: (_ data: T) -> ())
 
     fileprivate func locker() -> NSLock {
         switch self {

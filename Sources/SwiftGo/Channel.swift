@@ -17,7 +17,7 @@ protocol SendChannel {
 
 protocol ReceiveChannel {
     associatedtype Element
-    static prefix func <-(ch: Self) -> Element?
+    static prefix func <-(ch: Self) -> Element
 }
 
 
@@ -137,7 +137,7 @@ public final class Chan<T> {
         return first
     }
 
-    func receive() -> (T?, Bool) {
+    func receive() -> T? {
         if let w = sendWait.dequeue() {
             if var data = w.data {
                 if size > 0 {
@@ -145,27 +145,24 @@ public final class Chan<T> {
                 }
                 w.g.selectIndex = w.index
                 w.g.resume()
-                return (data, true)
+                return data
             } else {
                 fatalError("received nil data")
             }
         } else if count > 0 {
-            return (dequeueBuff(), true)
+            return dequeueBuff()
         }
-        return (nil, false)
+        return nil
     }
 
-    func receive(current g: Goroutine, index: Int = 0) -> T? {
-        var (data, ok) = receive()
-        if ok {
+    func receive(current g: Goroutine, index: Int = 0) -> T {
+        if let data = receive() {
             return data
         }
-        recvWait.enqueue(GoCase(g))
+        let w: GoCase<T> = GoCase(g)
+        recvWait.enqueue(w)
         g.suspend()
-        let message = g.message
-        if message is T? {
-            data = message as? T
-            g.message = nil
+        if let data = w.data {
             return data
         }
         fatalError("receive data wrong type")
@@ -174,7 +171,7 @@ public final class Chan<T> {
 
     func send(_ data: T) -> Bool {
         if let w = recvWait.dequeue() {
-            w.g.message = data
+            w.data = data
             w.g.selectIndex = w.index
             w.g.resume()
             return true
@@ -198,7 +195,7 @@ public final class Chan<T> {
 extension Chan: Channel {
     typealias Element = T
 
-    static prefix func <-(ch: Chan<T>) -> T? {
+    static prefix func <-(ch: Chan<T>) -> T {
         fatalError("no implement <- operator yet")
     }
 
