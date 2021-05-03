@@ -4,6 +4,8 @@
 
 import Foundation
 
+//import Atomics
+
 prefix operator <-
 infix operator <-
 
@@ -28,6 +30,7 @@ public final class Chan<T> {
         var last: GoCase<T>?
 
         mutating func remove(_ value: GoCase<T>) {
+            value.removed = true
             if let prev = value.prev {
                 if let next = value.next {
                     next.prev = prev
@@ -42,8 +45,7 @@ public final class Chan<T> {
             } else if let next = value.next {
                 first = next
                 value.next = nil
-            } else {
-                assert(first === value && last === value)
+            } else if first === value {
                 first = nil
                 last = nil
             }
@@ -137,13 +139,23 @@ public final class Chan<T> {
         return first
     }
 
+    func dequeue(_ wg: inout WaitGo) -> GoCase<T>? {
+        while let w = wg.dequeue() {
+            w.removed = true
+            if !w.g.trySelect(index: w.index) {
+                continue
+            }
+            return w
+        }
+        return nil
+    }
+
     func receive() -> T? {
-        if let w = sendWait.dequeue() {
+        if let w = dequeue(&sendWait) {
             if var data = w.data {
                 if size > 0 {
                     data = recvAndSend(data: data)
                 }
-                w.g.selectIndex = w.index
                 w.g.resume()
                 return data
             } else {
@@ -170,9 +182,8 @@ public final class Chan<T> {
 
 
     func send(_ data: T) -> Bool {
-        if let w = recvWait.dequeue() {
+        if let w = dequeue(&recvWait) {
             w.data = data
-            w.g.selectIndex = w.index
             w.g.resume()
             return true
         } else if size > count {

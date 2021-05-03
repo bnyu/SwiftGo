@@ -5,9 +5,12 @@
 import Foundation
 import Dispatch
 
+//import Atomics
+
 final class GoCase<T> {
     weak var prev: GoCase?
     var next: GoCase?
+    var removed = false
 
     let g: Goroutine
     let index: Int
@@ -25,7 +28,8 @@ final class GoCase<T> {
 }
 
 public final class Goroutine {
-    var selectIndex = -1
+    private var selectIndex = -1
+    private let locker = NSLock() //todo temp
 
     private var rands = (UInt32(0), UInt32(0))
 
@@ -60,12 +64,26 @@ public final class Goroutine {
         semaphore.signal()
     }
 
+    func trySelect(index: Int) -> Bool {
+        //todo cas selectIndex
+        if selectIndex >= 0 {
+            return false
+        }
+        //todo lock temp, use atomic instead
+        locker.lock()
+        defer {
+            locker.unlock()
+        }
+        selectIndex = index
+        return true
+    }
+
     private func randIndex(count: Int) -> [Int] {
         var indices = Array(repeating: 0, count: count)
         for i in 1..<count {
-            let n = Int(fastRand(n: UInt32(i + 1)))
-            indices[n] = indices[i]
-            indices[i] = n
+            let x = Int(fastRand(n: UInt32(i + 1)))
+            indices[i] = indices[x]
+            indices[x] = i
         }
         return indices
     }
@@ -78,9 +96,10 @@ public final class Goroutine {
         return UInt32((UInt64(rands.0 + rands.1) &* UInt64(n)) >> 32)
     }
 
-    private func lockAll(list: [NSLock]) {
+    private func lockAll<T>(_ cases: [Select<T>], orders: [Int]) {
         var p: NSLock?
-        for l in list {
+        for i in orders {
+            let l = cases[i].locker
             if p !== l {
                 l.lock()
             }
@@ -88,9 +107,10 @@ public final class Goroutine {
         }
     }
 
-    private func unlockAll(list: [NSLock]) {
+    private func unlockAll<T>(_ cases: [Select<T>], orders: [Int]) {
         var p: NSLock?
-        for l in list {
+        for i in orders {
+            let l = cases[i].locker
             if p !== l {
                 l.unlock()
             }
@@ -110,17 +130,17 @@ public final class Goroutine {
             return
         }
 
-        var lockers = cases.map { c in
-            c.locker()
-        }
+        // random
+        let pullOrder = randIndex(count: cases.count)
         // avoid deadlock
-        lockers.sort(by: { l1, l2 in l1.hash > l2.hash })
-        lockAll(list: lockers)
+        let lockOrder = cases.indices.sorted(by: { i, j in cases[i].locker.hash > cases[j].locker.hash })
+        lockAll(cases, orders: lockOrder)
 
-        let indices = randIndex(count: cases.count)
+        // reset
+        selectIndex = -1
 
         var closure: (() -> ())?
-        loop: for i in indices {
+        loop: for i in pullOrder {
             let c = cases[i]
             switch c {
             case .send(let ch, let data, let block):
@@ -139,18 +159,18 @@ public final class Goroutine {
         }
 
         if let closure = closure {
-            unlockAll(list: lockers)
+            unlockAll(cases, orders: lockOrder)
             closure()
             return
         } else if let block = block {
-            unlockAll(list: lockers)
+            unlockAll(cases, orders: lockOrder)
             block()
             return
         }
 
         // waiting on all cases
-        var waitCases: [GoCase<T>?] = Array(repeating: nil, count: indices.count)
-        for i in indices {
+        var waitCases: [GoCase<T>?] = Array(repeating: nil, count: pullOrder.count)
+        for i in pullOrder {
             let c = cases[i]
             switch c {
             case .send(let ch, let data, _):
@@ -164,32 +184,37 @@ public final class Goroutine {
             }
         }
 
-        unlockAll(list: lockers)
+        unlockAll(cases, orders: lockOrder)
         suspend()
         // resumed by another goroutine
         // remove other waiting
-        lockAll(list: lockers)
-        for i in indices {
-            if i != selectIndex {
-                let c = cases[i]
-                let w = waitCases[i]!
-                switch c {
-                case .send(let ch, _, _):
-                    ch.sendWait.remove(w)
-                case .receive(let ch, _):
-                    ch.recvWait.remove(w)
-                }
+        for i in lockOrder {
+            let w = waitCases[i]!
+            if w.removed {
+                continue
             }
+            let c = cases[i]
+            c.locker.lock()
+            switch c {
+            case .send(let ch, _, _):
+                ch.sendWait.remove(w)
+            case .receive(let ch, _):
+                ch.recvWait.remove(w)
+            }
+            c.locker.unlock()
         }
-        unlockAll(list: lockers)
 
         let c = cases[selectIndex]
-        let w = waitCases[selectIndex]
+        let w = waitCases[selectIndex]!
         switch c {
         case .send(_, _, let block):
             block()
         case .receive(_, let block):
-            block(w!.data!)
+            if let data = w.data {
+                block(data)
+            } else {
+                fatalError("received nil")
+            }
         }
     }
 
@@ -215,7 +240,7 @@ public enum Select<T> {
     case send(ch: Chan<T>, data: T, block: @autoclosure () -> ())
     case receive(ch: Chan<T>, block: (_ data: T) -> ())
 
-    fileprivate func locker() -> NSLock {
+    var locker: NSLock {
         switch self {
         case .send(let ch, _, _):
             return ch.locker
