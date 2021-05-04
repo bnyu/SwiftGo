@@ -93,7 +93,7 @@ public final class Goroutine {
         rands.0 ^= rands.0 << 17
         rands.0 = rands.0 ^ rands.1 ^ rands.0 >> 7 ^ rands.1 >> 16
         rands = (rands.1, rands.0)
-        return UInt32((UInt64(rands.0 + rands.1) &* UInt64(n)) >> 32)
+        return UInt32((UInt64(rands.0 &+ rands.1) &* UInt64(n)) >> 32)
     }
 
     private func lockAll<T>(_ cases: [Select<T>], orders: [Int]) {
