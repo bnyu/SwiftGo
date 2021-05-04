@@ -2,12 +2,12 @@
   "object": {
     "pins": [
       {
-        "package": "swift-atomics",
-        "repositoryURL": "https://github.com/apple/swift-atomics.git",
+        "package": "swift-backtrace",
+        "repositoryURL": "https://github.com/swift-server/swift-backtrace.git",
         "state": {
           "branch": null,
-          "revision": "3e95ba32cd1b4c877f6163e8eea54afc4e63bf9f",
-          "version": "0.0.3"
+          "revision": "54a65d6391a1467a896d0d351ff2de6f469ee53c",
+          "version": "1.2.3"
         }
       }
     ]
