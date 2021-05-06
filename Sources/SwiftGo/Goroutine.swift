@@ -42,13 +42,7 @@ public final class Goroutine {
     }
 
     func start() {
-        let prt = memoryAddress(&rands)
-        rands.0 = UInt32(prt >> 32)
-        rands.1 = UInt32(prt & (UInt.max >> 32))
-        if rands.0 == 0 { //32bit machine
-            rands.0 = UInt32(prt >> 16)
-            rands.1 = UInt32((prt << 16) >> 16)
-        }
+        initRand(&rands)
 
         let queue = DispatchQueue.global()
         semaphore.setTarget(queue: queue)
@@ -83,21 +77,11 @@ public final class Goroutine {
     private func randIndex(count: Int) -> [Int] {
         var indices = Array(repeating: 0, count: count)
         for i in 1..<count {
-            let x = Int(fastRand(n: UInt32(i + 1)))
+            let x = Int(fastRand(&rands, n: UInt32(i + 1)))
             indices[i] = indices[x]
             indices[x] = i
         }
         return indices
-    }
-
-    // XorShift(copied from golang), see below
-    // https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
-    // https://www.jstatsoft.org/article/view/v008i14/xorshift.pdf
-    private func fastRand(n: UInt32) -> UInt32 {
-        rands.0 ^= rands.0 << 17
-        rands.0 = rands.0 ^ rands.1 ^ rands.0 >> 7 ^ rands.1 >> 16
-        rands = (rands.1, rands.0)
-        return UInt32((UInt64(rands.0 &+ rands.1) &* UInt64(n)) >> 32)
     }
 
     private func lockAll<T>(_ cases: [Select<T>], orders: [Int]) {
@@ -125,7 +109,9 @@ public final class Goroutine {
     // need variadic generics?
     private func select<T>(_ cases: [Select<T>], nonBlock: Bool = false) -> (() -> ())! {
         if cases.isEmpty {
-            fatalError("empty select") // no need suspend forever
+            fatalError("select on empty case") // no need suspend forever
+        } else if cases.count > UInt16.max {
+            fatalError("select on too many cases")
         }
 
         // random indices
@@ -238,8 +224,28 @@ public final class Goroutine {
 
 }
 
-@inlinable func memoryAddress(_ p: UnsafeRawPointer) -> UInt {
-    UInt(bitPattern: p)
+
+@inlinable func initRand(_ rands: inout (UInt32, UInt32)) {
+    func memoryAddress(_ p: UnsafeRawPointer) -> UInt {
+        UInt(bitPattern: p)
+    }
+
+    let p = memoryAddress(&rands)
+    rands.0 = UInt32(p >> 32)
+    rands.1 = UInt32(p & (UInt.max >> 32))
+    if rands.0 | rands.1 == 0 {
+        rands.1 = UInt32(p == 0 ? 1 : p)
+    }
+}
+
+// XorShift(copied from golang), see below
+// https://www.jstatsoft.org/article/view/v008i14/xorshift.pdf
+// https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+@inlinable func fastRand(_ rands: inout (UInt32, UInt32), n: UInt32) -> UInt32 {
+    rands.0 ^= rands.0 << 17
+    rands.0 = rands.0 ^ rands.1 ^ rands.0 >> 7 ^ rands.1 >> 16
+    (rands.0, rands.1) = (rands.1, rands.0)
+    return UInt32((UInt64(rands.0 &+ rands.1) &* UInt64(n)) >> 32)
 }
 
 public enum Select<T> {
