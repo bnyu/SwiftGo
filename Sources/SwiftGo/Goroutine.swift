@@ -65,14 +65,16 @@ public final class Goroutine {
     }
 
     func trySelect(index: Int) -> Bool {
-        //todo cas selectIndex
         if selectIndex >= 0 {
             return false
         }
-        //todo lock temp, use atomic instead
+        //todo use lock temp
         locker.lock()
         defer {
             locker.unlock()
+        }
+        if selectIndex >= 0 {
+            return false
         }
         selectIndex = index
         return true
