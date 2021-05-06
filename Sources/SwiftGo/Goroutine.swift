@@ -10,7 +10,7 @@ import Dispatch
 final class GoCase<T> {
     weak var prev: GoCase?
     var next: GoCase?
-    var removed = false
+    var dequeued = false
 
     let g: Goroutine
     let index: Int
@@ -90,7 +90,9 @@ public final class Goroutine {
         return indices
     }
 
-    // XorShift
+    // XorShift(copied from golang), see below
+    // https://lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/
+    // https://www.jstatsoft.org/article/view/v008i14/xorshift.pdf
     private func fastRand(n: UInt32) -> UInt32 {
         rands.0 ^= rands.0 << 17
         rands.0 = rands.0 ^ rands.1 ^ rands.0 >> 7 ^ rands.1 >> 16
@@ -121,111 +123,113 @@ public final class Goroutine {
     }
 
     // need variadic generics?
-    private func select<T>(_ cases: [Select<T>], _ block: (() -> ())?) {
+    private func select<T>(_ cases: [Select<T>], nonBlock: Bool = false) -> (() -> ())! {
         if cases.isEmpty {
-            if let block = block {
-                block()
-                return
-            }
-            // block forever
-            suspend()
-            return
+            fatalError("empty select") // no need suspend forever
         }
 
-        // random
+        // random indices
         let pullOrder = randIndex(count: cases.count)
         // avoid deadlock
         let lockOrder = cases.indices.sorted(by: { i, j in cases[i].locker.hash > cases[j].locker.hash })
-        lockAll(cases, orders: lockOrder)
+        // maybe stores with cases? so T can be matched
+        var waitCases: [GoCase<T>?]! = nil
+        // lock all in this block
+        do {
+            lockAll(cases, orders: lockOrder)
+            defer {
+                unlockAll(cases, orders: lockOrder)
+            }
 
-        // reset
-        selectIndex = -1
-
-        var closure: (() -> ())?
-        loop: for i in pullOrder {
-            let c = cases[i]
-            switch c {
-            case .send(let ch, let data, let block):
-                if ch.send(data) {
-                    closure = block
-                    break loop
-                }
-            case .receive(let ch, let block):
-                if let data = ch.receive() {
-                    closure = {
-                        block(data)
+            for i in pullOrder {
+                let c = cases[i]
+                switch c {
+                case .send(let ch, let data, let block):
+                    if ch.send(data) {
+                        return block
                     }
-                    break loop
+                case .receive(let ch, let block):
+                    if let data = ch.receive() {
+                        return {
+                            block(data)
+                        }
+                    }
                 }
             }
-        }
 
-        if let closure = closure {
-            unlockAll(cases, orders: lockOrder)
-            closure()
-            return
-        } else if let block = block {
-            unlockAll(cases, orders: lockOrder)
-            block()
-            return
-        }
-
-        // waiting on all cases
-        var waitCases: [GoCase<T>?] = Array(repeating: nil, count: pullOrder.count)
-        for i in pullOrder {
-            let c = cases[i]
-            switch c {
-            case .send(let ch, let data, _):
-                let gc = GoCase(self, index: i, data: data)
-                waitCases[i] = gc
-                ch.sendWait.enqueue(gc)
-            case .receive(let ch, _):
-                let gc = GoCase<T>(self, index: i)
-                waitCases[i] = gc
-                ch.recvWait.enqueue(gc)
+            if nonBlock {
+                return nil
             }
+
+            // waiting on all cases
+            waitCases = Array(repeating: nil, count: pullOrder.count)
+            for i in pullOrder {
+                let c = cases[i]
+                switch c {
+                case .send(let ch, let data, _):
+                    let gc = GoCase(self, index: i, data: data)
+                    waitCases[i] = gc
+                    ch.sendWait.enqueue(gc)
+                case .receive(let ch, _):
+                    let gc = GoCase<T>(self, index: i)
+                    waitCases[i] = gc
+                    ch.recvWait.enqueue(gc)
+                }
+            }
+
+            // reset, to prepare to be resumed
+            selectIndex = -1
         }
 
-        unlockAll(cases, orders: lockOrder)
         suspend()
-        // resumed by another goroutine
-        // remove other waiting
+        // resumed by another goroutine. it may call resume before than this call suspend(it's ok)
+        // may multi cases dequeued but only one can call resume. need remove other waiting
         for i in lockOrder {
             let w = waitCases[i]!
-            if w.removed {
+            if w.dequeued {
                 continue
             }
             let c = cases[i]
             c.locker.lock()
+            defer {
+                c.locker.unlock()
+            }
+            if w.dequeued {
+                continue
+            }
             switch c {
             case .send(let ch, _, _):
                 ch.sendWait.remove(w)
             case .receive(let ch, _):
                 ch.recvWait.remove(w)
             }
-            c.locker.unlock()
         }
 
         let c = cases[selectIndex]
         let w = waitCases[selectIndex]!
         switch c {
         case .send(_, _, let block):
-            block()
+            return block
         case .receive(_, let block):
-            if let data = w.data {
-                block(data)
-            } else {
+            guard let data = w.data else {
                 fatalError("received nil")
+            }
+            return {
+                block(data)
             }
         }
     }
 
     public func select<T>(cases: Select<T>...) {
-        select(cases, nil)
+        select(cases)()
     }
 
-    public func select<T>(cases: Select<T>..., default block: @escaping () -> ()) {
-        select(cases, block)
+    public func select<T>(cases: Select<T>..., default closure: @autoclosure () -> ()) {
+        if let closure = select(cases, nonBlock: true) {
+            closure()
+        } else {
+            closure()
+        }
     }
 
     public func sleep(milliseconds: Int) {
