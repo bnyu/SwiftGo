@@ -4,8 +4,6 @@
 
 import Foundation
 
-//import Atomics
-
 prefix operator <-
 infix operator <-
 
@@ -30,7 +28,6 @@ public final class Chan<T> {
         var last: GoCase<T>?
 
         mutating func remove(_ value: GoCase<T>) {
-            value.removed = true
             if let prev = value.prev {
                 if let next = value.next {
                     next.prev = prev
@@ -141,7 +138,7 @@ public final class Chan<T> {
 
     func dequeue(_ wg: inout WaitGo) -> GoCase<T>? {
         while let w = wg.dequeue() {
-            w.removed = true
+            w.dequeued = true
             if !w.g.trySelect(index: w.index) {
                 continue
             }
