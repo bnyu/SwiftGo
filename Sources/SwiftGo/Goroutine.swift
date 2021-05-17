@@ -117,6 +117,7 @@ public final class Goroutine {
             }
             let gc = GoCase(self, index: 0, data: data)
             ch.sendWait.enqueue(gc)
+            selectIndex = -1
         }
         suspend()
     }
@@ -133,12 +134,13 @@ public final class Goroutine {
             }
             gc = GoCase(self, index: 0)
             ch.recvWait.enqueue(gc)
+            selectIndex = -1
         }
         suspend()
         return gc.data!
     }
 
-    func send<T>(ch: Chan<T>, data: T) -> Bool {
+    private func send<T>(ch: Chan<T>, data: T) -> Bool {
         ch.locker.lock()
         defer {
             ch.locker.unlock()
@@ -149,7 +151,7 @@ public final class Goroutine {
         return false
     }
 
-    func receive<T>(ch: Chan<T>) -> T? {
+    private func receive<T>(ch: Chan<T>) -> T? {
         ch.locker.lock()
         defer {
             ch.locker.unlock()
