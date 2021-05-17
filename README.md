@@ -2,8 +2,16 @@
 
 Introduce CSP into Swift, inspired by Golang
 
+required Swift 5.0 or higher
+
 This is not a stable version<code>0.0.2</code>, so please do not use it in production environment.  
 Please feel free to summit a PR or an Issue.
+
+## Introduction
+#### Features
+- Goroutines (lighter than threads)
+- FIFO channel (with or without buffer)
+- Select on channels (with or without default)
 
 ## Usage
 
@@ -14,7 +22,7 @@ Then
 import SwiftGo
 ```
 
-## Example
+### Example
 
 - new goroutine
 ```swift
@@ -72,3 +80,10 @@ go {
 }
 ```
 
+## Dependencies
+It uses [GCD](https://github.com/apple/swift-corelibs-libdispatch) to dispatch `goroutine` instead of `Thread`.
+Similar to the role of GMP in Golang.  
+It will use [Atomics](https://github.com/apple/swift-atomics) to replace `NSLocker` for select race(which does not support Windows yet)
+
+## License
+SwiftGo is licensed under the Apache License, Version 2.0. See [License](LICENSE) for the full license text.
