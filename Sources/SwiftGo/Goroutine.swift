@@ -106,6 +106,50 @@ public final class Goroutine {
         }
     }
 
+    private func select<T>(_ c: Select<T>, nonBlock: Bool = false) -> (() -> ())! {
+        let gc: GoCase<T>
+        do {
+            c.locker.lock()
+            defer {
+                c.locker.unlock()
+            }
+            switch c {
+            case .send(let ch, let data, let block):
+                if ch.send(data) {
+                    return block
+                }
+                if nonBlock {
+                    return nil
+                }
+                gc = GoCase(self, index: 0, data: data)
+                ch.sendWait.enqueue(gc)
+            case .receive(let ch, let block):
+                if let data = ch.receive() {
+                    return {
+                        block(data)
+                    }
+                }
+                if nonBlock {
+                    return nil
+                }
+                gc = GoCase<T>(self, index: 0)
+                ch.recvWait.enqueue(gc)
+            }
+        }
+        suspend()
+        switch c {
+        case .send(_, _, let block):
+            return block
+        case .receive(_, let block):
+            guard let data = gc.data else {
+                fatalError("received nil")
+            }
+            return {
+                block(data)
+            }
+        }
+    }
+
     // need variadic generics?
     private func select<T>(_ cases: [Select<T>], nonBlock: Bool = false) -> (() -> ())! {
         if cases.isEmpty {
@@ -207,11 +251,23 @@ public final class Goroutine {
     }
 
     public func select<T>(cases: Select<T>...) {
-        select(cases)()
+        select(cases, nonBlock: false)()
     }
 
     public func select<T>(cases: Select<T>..., default closure: @autoclosure () -> ()) {
         if let closure = select(cases, nonBlock: true) {
+            closure()
+        } else {
+            closure()
+        }
+    }
+
+    public func select<T>(_ c: Select<T>) {
+        select(c, nonBlock: false)()
+    }
+
+    public func select<T>(_ c: Select<T>, default closure: @autoclosure () -> ()) {
+        if let closure = select(c, nonBlock: true) {
             closure()
         } else {
             closure()
