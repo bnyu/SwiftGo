@@ -106,48 +106,58 @@ public final class Goroutine {
         }
     }
 
-    private func select<T>(_ c: Select<T>, nonBlock: Bool = false) -> (() -> ())! {
-        let gc: GoCase<T>
+    public func send<T>(to ch: Chan<T>, data: T) {
         do {
-            c.locker.lock()
+            ch.locker.lock()
             defer {
-                c.locker.unlock()
+                ch.locker.unlock()
             }
-            switch c {
-            case .send(let ch, let data, let block):
-                if ch.send(data) {
-                    return block
-                }
-                if nonBlock {
-                    return nil
-                }
-                gc = GoCase(self, index: 0, data: data)
-                ch.sendWait.enqueue(gc)
-            case .receive(let ch, let block):
-                if let data = ch.receive() {
-                    return {
-                        block(data)
-                    }
-                }
-                if nonBlock {
-                    return nil
-                }
-                gc = GoCase<T>(self, index: 0)
-                ch.recvWait.enqueue(gc)
+            if ch.send(data) {
+                return
             }
+            let gc = GoCase(self, index: 0, data: data)
+            ch.sendWait.enqueue(gc)
         }
         suspend()
-        switch c {
-        case .send(_, _, let block):
-            return block
-        case .receive(_, let block):
-            guard let data = gc.data else {
-                fatalError("received nil")
+    }
+
+    public func receive<T>(from ch: Chan<T>) -> T {
+        let gc: GoCase<T>
+        do {
+            ch.locker.lock()
+            defer {
+                ch.locker.unlock()
             }
-            return {
-                block(data)
+            if let data = ch.receive() {
+                return data
             }
+            gc = GoCase(self, index: 0)
+            ch.recvWait.enqueue(gc)
         }
+        suspend()
+        return gc.data!
+    }
+
+    func send<T>(ch: Chan<T>, data: T) -> Bool {
+        ch.locker.lock()
+        defer {
+            ch.locker.unlock()
+        }
+        if ch.send(data) {
+            return true
+        }
+        return false
+    }
+
+    func receive<T>(ch: Chan<T>) -> T? {
+        ch.locker.lock()
+        defer {
+            ch.locker.unlock()
+        }
+        if let data = ch.receive() {
+            return data
+        }
+        return nil
     }
 
     // need variadic generics?
@@ -263,14 +273,29 @@ public final class Goroutine {
     }
 
     public func select<T>(_ c: Select<T>) {
-        select(c, nonBlock: false)()
+        switch c {
+        case .send(let ch, let data, let block):
+            send(to: ch, data: data)
+            block()
+        case .receive(let ch, let block):
+            block(receive(from: ch))
+        }
     }
 
     public func select<T>(_ c: Select<T>, default closure: @autoclosure () -> ()) {
-        if let closure = select(c, nonBlock: true) {
-            closure()
-        } else {
-            closure()
+        switch c {
+        case .send(let ch, let data, let block):
+            if send(ch: ch, data: data) {
+                block()
+            } else {
+                closure()
+            }
+        case .receive(let ch, let block):
+            if let data = receive(ch: ch) {
+                block(data)
+            } else {
+                closure()
+            }
         }
     }
 
