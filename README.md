@@ -34,9 +34,9 @@ go {
 
 - send and receive
 ```swift
-// create a Int channel without cache
+// create a Int channel without buffer
 let ch = Chan<Int>()
-// create a Int channel with 10 capacity cache
+// create a Int channel with 10 capacity buffer
 // let ch = Chan<Int>(10)
 
 go {
