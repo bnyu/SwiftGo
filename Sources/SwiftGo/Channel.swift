@@ -1,25 +1,4 @@
-//
-// Created by xuyue on 2021/4/24.
-//
-
 import Foundation
-
-prefix operator <-
-infix operator <-
-
-protocol Channel: SendChannel, ReceiveChannel {
-}
-
-protocol SendChannel {
-    associatedtype Element
-    static func <-(ch: Self, data: Element)
-}
-
-protocol ReceiveChannel {
-    associatedtype Element
-    static prefix func <-(ch: Self) -> Element
-}
-
 
 public final class Chan<T> {
 
@@ -199,16 +178,3 @@ public final class Chan<T> {
     }
 
 }
-
-extension Chan: Channel {
-    typealias Element = T
-
-    static prefix func <-(ch: Chan<T>) -> T {
-        fatalError("no implement <- operator yet")
-    }
-
-    static func <-(ch: Chan<T>, data: T) {
-        fatalError("no implement <- operator yet")
-    }
-}
-

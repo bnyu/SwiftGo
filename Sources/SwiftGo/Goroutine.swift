@@ -1,7 +1,3 @@
-//
-// Created by xuyue on 2021/4/24.
-//
-
 import Foundation
 import Dispatch
 
@@ -106,6 +102,62 @@ public final class Goroutine {
         }
     }
 
+    public func send<T>(to ch: Chan<T>, data: T) {
+        do {
+            ch.locker.lock()
+            defer {
+                ch.locker.unlock()
+            }
+            if ch.send(data) {
+                return
+            }
+            let gc = GoCase(self, index: 0, data: data)
+            ch.sendWait.enqueue(gc)
+            selectIndex = -1
+        }
+        suspend()
+    }
+
+    public func receive<T>(from ch: Chan<T>) -> T {
+        let gc: GoCase<T>
+        do {
+            ch.locker.lock()
+            defer {
+                ch.locker.unlock()
+            }
+            if let data = ch.receive() {
+                return data
+            }
+            gc = GoCase(self, index: 0)
+            ch.recvWait.enqueue(gc)
+            selectIndex = -1
+        }
+        suspend()
+        return gc.data!
+    }
+
+    private func send<T>(ch: Chan<T>, data: T) -> Bool {
+        ch.locker.lock()
+        defer {
+            ch.locker.unlock()
+        }
+        if ch.send(data) {
+            return true
+        }
+        return false
+    }
+
+    private func receive<T>(ch: Chan<T>) -> T? {
+        ch.locker.lock()
+        defer {
+            ch.locker.unlock()
+        }
+        if let data = ch.receive() {
+            return data
+        }
+        return nil
+    }
+
     // need variadic generics?
     private func select<T>(_ cases: [Select<T>], nonBlock: Bool = false) -> (() -> ())! {
         if cases.isEmpty {
@@ -206,15 +258,42 @@ public final class Goroutine {
         }
     }
 
-    public func select<T>(cases: Select<T>...) {
-        select(cases)()
+    public func select<T>(_ cases: Select<T>...) {
+        select(cases, nonBlock: false)()
     }
 
-    public func select<T>(cases: Select<T>..., default closure: @autoclosure () -> ()) {
+    public func select<T>(_ cases: Select<T>..., default closure: @autoclosure () -> ()) {
         if let closure = select(cases, nonBlock: true) {
             closure()
         } else {
             closure()
+        }
+    }
+
+    public func select<T>(_ c: Select<T>) {
+        switch c {
+        case .send(let ch, let data, let block):
+            send(to: ch, data: data)
+            block()
+        case .receive(let ch, let block):
+            block(receive(from: ch))
+        }
+    }
+
+    public func select<T>(_ c: Select<T>, default closure: @autoclosure () -> ()) {
+        switch c {
+        case .send(let ch, let data, let block):
+            if send(ch: ch, data: data) {
+                block()
+            } else {
+                closure()
+            }
+        case .receive(let ch, let block):
+            if let data = receive(ch: ch) {
+                block(data)
+            } else {
+                closure()
+            }
         }
     }
 
