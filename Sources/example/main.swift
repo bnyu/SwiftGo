@@ -20,7 +20,7 @@ go { _ in
         print("start receive data")
         var loop = true
         while loop {
-            $0.select(cases: .receive(ch: dataCh, block: { data in print("\(data) <-") }),
+            $0.select(.receive(ch: dataCh, block: { data in print("\(data) <-") }),
                     .receive(ch: quitCh, block: { info in loop = false; print("quit with \(info)") })
             )
         }
@@ -29,7 +29,7 @@ go { _ in
     go {
         print("start send data")
         for i in 1...10000 {
-            $0.select(cases: .send(ch: dataCh, data: i, block: print("<- \(i)")),
+            $0.select(.send(ch: dataCh, data: i, block: print("<- \(i)")),
                     .send(ch: dataCh, data: -i, block: print("<- \(-i)")))
         }
     }
@@ -37,7 +37,7 @@ go { _ in
 
 go {
     $0.sleep(milliseconds: 999)
-    $0.select(cases: .send(ch: quitCh, data: 0, block: print("send quit single")))
+    $0.select(.send(ch: quitCh, data: 0, block: print("send quit single")))
 }
 
 

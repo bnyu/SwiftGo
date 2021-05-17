@@ -1,7 +1,3 @@
-//
-// Created by xuyue on 2021/4/24.
-//
-
 import Foundation
 import Dispatch
 
@@ -262,11 +258,11 @@ public final class Goroutine {
         }
     }
 
-    public func select<T>(cases: Select<T>...) {
+    public func select<T>(_ cases: Select<T>...) {
         select(cases, nonBlock: false)()
     }
 
-    public func select<T>(cases: Select<T>..., default closure: @autoclosure () -> ()) {
+    public func select<T>(_ cases: Select<T>..., default closure: @autoclosure () -> ()) {
         if let closure = select(cases, nonBlock: true) {
             closure()
         } else {

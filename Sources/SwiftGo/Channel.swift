@@ -1,7 +1,3 @@
-//
-// Created by xuyue on 2021/4/24.
-//
-
 import Foundation
 
 public final class Chan<T> {
