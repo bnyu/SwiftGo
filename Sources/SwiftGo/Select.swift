@@ -5,35 +5,32 @@ public enum SelectCase<T> {
     case receive(_ block: (_ data: T) -> ())
 }
 
-public typealias Select<T> = (channel: Chan<T>, case: SelectCase<T>)
+public struct Case<T> {
+    let channel: Chan<T>
+    let select: SelectCase<T>
 
+    public init(_ ch: Chan<T>, _ c: SelectCase<T>) {
+        channel = ch
+        select = c
+    }
+}
 
 extension Chan {
-    public func send(data: T, _ block: @escaping () -> ()) -> Select<T> {
-        (self, .send(data: data, block))
+    public func send(data: T, _ block: @escaping () -> ()) -> Case<T> {
+        Case(self, .send(data: data, block))
     }
 
-    public func receive(_ block: @escaping (T) -> ()) -> Select<T> {
-        (self, .receive(block))
+    public func receive(_ block: @escaping (T) -> ()) -> Case<T> {
+        Case(self, .receive(block))
     }
 }
 
-
-func randIndex(_ rands: inout Rand, count: Int) -> [Int] {
-    var indices = Array(repeating: 0, count: count)
-    for i in 1..<count {
-        let x = Int(rands.fast(n: UInt32(i + 1)))
-        indices[i] = indices[x]
-        indices[x] = i
-    }
-    return indices
-}
 
 extension Goroutine {
 
-    public func select<T>(_ c: Select<T>) {
+    public func select<T>(_ c: Case<T>) {
         let ch = c.channel
-        switch c.case {
+        switch c.select {
         case .send(let data, let block):
             send(to: ch, data: data)
             block()
@@ -42,9 +39,9 @@ extension Goroutine {
         }
     }
 
-    public func select<T>(_ c: Select<T>, default closure: @autoclosure () -> ()) {
+    public func select<T>(_ c: Case<T>, default closure: @autoclosure () -> ()) {
         let ch = c.channel
-        switch c.case {
+        switch c.select {
         case .send(let data, let block):
             if send(ch: ch, data: data) {
                 block()
