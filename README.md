@@ -55,16 +55,19 @@ go {
 - select
 ```swift
 let ch1 = Chan<Int>()
-let ch2 = Chan<Int>(2)
-let ch3 = Chan<Int>(3)
+let ch2 = Chan<Float>(12)
+let ch3 = Chan<String>()
 
 go {
     // select on cases
     $0.select(
-            .receive(ch: ch1, block: { data in print("received \(data) from ch1") }),
-            .receive(ch: ch2, block: { data in print("received \(data) from ch2") }),
-            .send(ch: ch3, data: 33, block: print("send 33 to ch3")),
-            .send(ch: ch3, data: 42, block: print("send 42 to ch3"))
+            Case(ch1, .send(data: Int.random(in: 0...10))),
+            Case(ch2, .send(data: Float.random(in: 0...5.0)) {
+                print("send to ch2")
+            }),
+            Case(ch3, .receive { data in
+                print("receive str: \(data)")
+            })
     )
     // continue do something here
 }
@@ -72,9 +75,13 @@ go {
 go {
     // select with default
     $0.select(
-            .receive(ch: ch2, block: { data in print("received \(data) from ch2") }),
-            .send(ch: ch3, data: 1, block: print("send 1 to ch3")),
-            default: print("default action")
+            Case(ch1, .send(data: Int.random(in: 0...10))),
+            Case(ch2, .send(data: Float.random(in: 0...5.0)) {
+                print("send to ch2")
+            }),
+            default: {
+                print("pass")
+            }
     )
     // continue do something here
 }

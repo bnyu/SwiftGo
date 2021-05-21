@@ -11,8 +11,10 @@ Backtrace.install()
 
 print("Hello SwiftGo")
 
-let dataCh = Chan<Int>()
-let quitCh = Chan<Int>()
+let ch1 = Chan<Int>(10)
+let ch2 = Chan<Float>()
+let qs = Chan<String>()
+let qr = Chan<String>()
 
 go { _ in
     print("start")
@@ -20,24 +22,51 @@ go { _ in
         print("start receive data")
         var loop = true
         while loop {
-            $0.select(.receive(ch: dataCh, block: { data in print("\(data) <-") }),
-                    .receive(ch: quitCh, block: { info in loop = false; print("quit with \(info)") })
+            $0.select(
+                    Case(ch1, .receive { data in
+                        print("\(data) <-")
+                    }),
+                    Case(ch2, .receive { data in
+                        print("\(data) <-")
+                    }),
+                    Case(qr, .receive { data in
+                        loop = false
+                        print("stop receive cause \(data)")
+                    })
             )
         }
     }
 
     go {
         print("start send data")
-        for i in 1...10000 {
-            $0.select(.send(ch: dataCh, data: i, block: print("<- \(i)")),
-                    .send(ch: dataCh, data: -i, block: print("<- \(-i)")))
+        var loop = true
+        while loop {
+            $0.select(
+                    Case(ch1, .send(data: Int.random(in: -10...10))),
+                    Case(ch1, .send(data: Int.random(in: 100...200))),
+                    Case(ch2, .send(data: Float.random(in: 0...5.0))),
+                    Case(qs, .receive { data in
+                        loop = false
+                        print("stop send cause \(data)")
+                    })
+            )
         }
+    }
+
+    go {
+        $0.sleep(milliseconds: 1000)
+        $0.select(Case(ch1, .send(data: -1)), default: {
+            print("=====")
+        })
+        $0.send(to: qs, data: "times up")
+        print("------")
     }
 }
 
 go {
-    $0.sleep(milliseconds: 999)
-    $0.select(.send(ch: quitCh, data: 0, block: print("send quit single")))
+    $0.sleep(milliseconds: 1000)
+    $0.send(to: qr, data: "times up")
+    print("------")
 }
 
 
