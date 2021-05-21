@@ -7,6 +7,7 @@ public enum SelectCase<T> {
     })
 }
 
+////need variadic generics
 //public struct Case<T> {
 //    let channel: Chan<T>
 //    let select: SelectCase<T>
@@ -15,40 +16,6 @@ public enum SelectCase<T> {
 //        channel = ch
 //        select = c
 //    }
-//}
-
-//// single select case
-//extension Goroutine {
-//
-//    public func select<T>(_ c: Case<T>) {
-//        let ch = c.channel
-//        switch c.select {
-//        case .send(let data, let block):
-//            send(to: ch, data: data)
-//            block()
-//        case .receive(let block):
-//            block(receive(from: ch))
-//        }
-//    }
-//
-//    public func select<T>(_ c: Case<T>, default closure: @autoclosure () -> ()) {
-//        let ch = c.channel
-//        switch c.select {
-//        case .send(let data, let block):
-//            if send(ch: ch, data: data) {
-//                block()
-//            } else {
-//                closure()
-//            }
-//        case .receive(let block):
-//            if let data = receive(ch: ch) {
-//                block(data)
-//            } else {
-//                closure()
-//            }
-//        }
-//    }
-//
 //}
 
 // todo: type erased for now (current swift 5.4)
@@ -74,8 +41,10 @@ public struct AnyCase {
     let locker: AnyObject & NSLocking
     let hash: Int
 
+
     let trySelect: () -> (() -> ())?
     let beSelected: (AnyGoCase) -> () -> ()
+    let waitSelected: (Goroutine) -> () -> ()
 
     let enWait: (Goroutine, Int) -> AnyGoCase
     let deWait: (AnyGoCase) -> ()
@@ -105,6 +74,10 @@ public struct AnyCase {
             beSelected = { _ in
                 block
             }
+            waitSelected = { g in
+                g.send(to: ch, data: data)
+                return block
+            }
         case .receive(let block):
             selectKind = .receive
             enWait = { g, i in
@@ -128,9 +101,37 @@ public struct AnyCase {
                     block((gc as! GoCase<T>).data!)
                 }
             }
+            waitSelected = { g in
+                let data = g.receive(from: ch)
+                return {
+                    block(data)
+                }
+            }
         }
     }
 }
+
+
+// single select case
+extension Goroutine {
+
+    public func select(_ c: Case) {
+        c.waitSelected(self)()
+    }
+
+    public func select(_ c: Case, default closure: () -> ()) {
+        c.locker.lock()
+        if let block = c.trySelect() {
+            c.locker.unlock()
+            block()
+        } else {
+            c.locker.unlock()
+            closure()
+        }
+    }
+
+}
+
 
 // multi select cases
 extension Goroutine {
