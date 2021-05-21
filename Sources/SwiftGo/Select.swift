@@ -190,7 +190,7 @@ extension Goroutine {
         // avoid deadlock
         let lockOrder = cases.indices.sorted(by: { i, j in cases[i].hash < cases[j].hash })
         // maybe stores with cases? so T can be matched
-        var waitCases: [AnyGoCase]
+        var waitCases: [AnyGoCase?]
         // lock all in this block
         do {
             lockAll(cases, orders: lockOrder)
@@ -209,8 +209,9 @@ extension Goroutine {
             }
 
             // waiting on all cases
-            waitCases = pullOrder.map { i in
-                cases[i].enWait(self, i)
+            waitCases = [AnyGoCase?].init(repeating: nil, count: cases.count)
+            for i in pullOrder {
+                waitCases[i] = cases[i].enWait(self, i)
             }
 
             // reset, to prepare to be resumed
@@ -221,7 +222,7 @@ extension Goroutine {
         // resumed by another goroutine. it may call resume before than this call suspend(it's ok)
         // may multi cases dequeued but only one can call resume. need remove other waiting
         for i in lockOrder {
-            let w = waitCases[i]
+            let w = waitCases[i]!
             if w.dequeued {
                 continue
             }
@@ -237,7 +238,7 @@ extension Goroutine {
         }
 
         let c = cases[selectIndex]
-        let w = waitCases[selectIndex]
+        let w = waitCases[selectIndex]!
         return c.beSelected(w)
     }
 }
