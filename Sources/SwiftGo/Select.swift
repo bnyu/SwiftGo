@@ -5,160 +5,127 @@ public enum SelectCase<T> {
     case receive(_ block: (_ data: T) -> ())
 }
 
-public struct Case<T> {
-    let channel: Chan<T>
-    let select: SelectCase<T>
+//public struct Case<T> {
+//    let channel: Chan<T>
+//    let select: SelectCase<T>
+//
+//    public init(_ ch: Chan<T>, _ c: SelectCase<T>) {
+//        channel = ch
+//        select = c
+//    }
+//}
 
-    public init(_ ch: Chan<T>, _ c: SelectCase<T>) {
-        channel = ch
-        select = c
-    }
-}
+//// single select case
+//extension Goroutine {
+//
+//    public func select<T>(_ c: Case<T>) {
+//        let ch = c.channel
+//        switch c.select {
+//        case .send(let data, let block):
+//            send(to: ch, data: data)
+//            block()
+//        case .receive(let block):
+//            block(receive(from: ch))
+//        }
+//    }
+//
+//    public func select<T>(_ c: Case<T>, default closure: @autoclosure () -> ()) {
+//        let ch = c.channel
+//        switch c.select {
+//        case .send(let data, let block):
+//            if send(ch: ch, data: data) {
+//                block()
+//            } else {
+//                closure()
+//            }
+//        case .receive(let block):
+//            if let data = receive(ch: ch) {
+//                block(data)
+//            } else {
+//                closure()
+//            }
+//        }
+//    }
+//
+//}
 
-extension Chan {
-    public func send(data: T, _ block: @escaping () -> ()) -> Case<T> {
-        Case(self, .send(data: data, block))
-    }
-
-    public func receive(_ block: @escaping (T) -> ()) -> Case<T> {
-        Case(self, .receive(block))
-    }
-}
-
-
-// single select case
-extension Goroutine {
-
-    public func select<T>(_ c: Case<T>) {
-        let ch = c.channel
-        switch c.select {
-        case .send(let data, let block):
-            send(to: ch, data: data)
-            block()
-        case .receive(let block):
-            block(receive(from: ch))
-        }
-    }
-
-    public func select<T>(_ c: Case<T>, default closure: @autoclosure () -> ()) {
-        let ch = c.channel
-        switch c.select {
-        case .send(let data, let block):
-            if send(ch: ch, data: data) {
-                block()
-            } else {
-                closure()
-            }
-        case .receive(let block):
-            if let data = receive(ch: ch) {
-                block(data)
-            } else {
-                closure()
-            }
-        }
-    }
-
-}
+// todo: type erased for now (current swift 5.4)
+public typealias Case = AnyCase
 
 
-// todo: need variadic generics to refactor this
-protocol AnyWait: AnyObject {
+protocol AnyGoCase {
     var dequeued: Bool { get }
-    var anyData: Any! { get }
 }
 
-extension GoCase: AnyWait {
-    var anyData: Any! {
-        data
-    }
+extension GoCase: AnyGoCase {
 }
 
-protocol AnyChannel: AnyObject {
-    var address: Int { get } //memory address
-    func getLocker() -> NSLocking
-    func trySend(_ data: Any) -> Bool
-    func tryRecv() -> Any?
-}
-
-extension Chan: AnyChannel {
-    func getLocker() -> NSLocking {
-        locker
+public struct AnyCase {
+    enum SelectKind {
+        case send
+        case receive
     }
 
-    var address: Int {
-        locker.hash
-    }
+    let anyChannel: Any
+    let selectKind: SelectKind
 
-    func trySend(_ data: Any) -> Bool {
-        send(data as! T)
-    }
+    let locker: AnyObject & NSLocking
+    let hash: Int
 
-    func tryRecv() -> Any? {
-        receive()
-    }
-}
+    let trySelect: () -> (() -> ())?
+    let beSelected: (AnyGoCase) -> () -> ()
 
-protocol AnySelect {
-    var anyChannel: AnyChannel { get } // can not define name with 'channel' ...
-    func trySelect() -> (() -> ())?
-    func beSelected(_: AnyWait) -> () -> ()
-    func enWait(_ g: Goroutine, index: Int) -> AnyWait
-    func deWait(_: AnyWait)
-}
+    let enWait: (Goroutine, Int) -> AnyGoCase
+    let deWait: (AnyGoCase) -> ()
 
 
-extension Case: AnySelect {
-    var anyChannel: AnyChannel {
-        channel
-    }
-
-    func trySelect() -> (() -> ())? {
-        switch select {
+    public init<T>(_ ch: Chan<T>, _ c: SelectCase<T>) {
+        anyChannel = ch
+        locker = ch.locker
+        hash = ch.locker.hash
+        switch c {
         case .send(let data, let block):
-            if anyChannel.trySend(data) {
-                return block
+            selectKind = .send
+            enWait = { g, i in
+                let gc: GoCase<T> = GoCase(g, index: i, data: data)
+                ch.sendWait.enqueue(gc)
+                return gc
+            }
+            deWait = { gc in
+                ch.sendWait.remove(gc as! GoCase<T>)
+            }
+            trySelect = {
+                if ch.send(data) {
+                    return block
+                }
+                return nil
+            }
+            beSelected = { _ in
+                block
             }
         case .receive(let block):
-            if let data = anyChannel.tryRecv() {
-                return {
-                    block(data as! T)
+            selectKind = .receive
+            enWait = { g, i in
+                let gc: GoCase<T> = GoCase(g, index: i)
+                ch.recvWait.enqueue(gc)
+                return gc
+            }
+            deWait = { gc in
+                ch.recvWait.remove(gc as! GoCase<T>)
+            }
+            trySelect = {
+                if let data = ch.receive() {
+                    return {
+                        block(data)
+                    }
+                }
+                return nil
+            }
+            beSelected = { gc in
+                {
+                    block((gc as! GoCase<T>).data!)
                 }
             }
-        }
-        return nil
-    }
-
-    func beSelected(_ wait: AnyWait) -> () -> () {
-        switch select {
-        case .send(_, let block):
-            return block
-        case .receive(let block):
-            let data = wait.anyData
-            return {
-                block(data as! T)
-            }
-        }
-    }
-
-    func enWait(_ g: Goroutine, index: Int) -> AnyWait {
-        let w: GoCase<T>
-        switch select {
-        case .send(let data, _):
-            w = GoCase<T>(g, index: index, data: data)
-            channel.sendWait.enqueue(w)
-        case .receive:
-            w = GoCase<T>(g, index: index)
-            channel.recvWait.enqueue(w)
-        }
-        return w
-    }
-
-    func deWait(_ wait: AnyWait) {
-        switch select {
-        case .send:
-            channel.sendWait.remove(wait as! GoCase<T>)
-        case .receive:
-            channel.recvWait.remove(wait as! GoCase<T>)
         }
     }
 }
@@ -166,11 +133,11 @@ extension Case: AnySelect {
 // multi select cases
 extension Goroutine {
 
-    func select<U: AnySelect>(_ cases: U...) {
+    public func select(_ cases: AnyCase...) {
         select(cases, nonBlock: false)()
     }
 
-    func select<U: AnySelect>(_ cases: U..., default closure: @autoclosure () -> ()) {
+    public func select(_ cases: AnyCase..., default closure: @autoclosure () -> ()) {
         if let block = select(cases, nonBlock: true) {
             block()
         } else {
@@ -189,29 +156,29 @@ extension Goroutine {
         return indices
     }
 
-    private func lockAll(_ cases: [AnySelect], orders: [Int]) {
-        var p: AnyChannel?
+    private func lockAll(_ cases: [AnyCase], orders: [Int]) {
+        var p: (AnyObject & NSLocking)?
         for i in orders {
-            let l = cases[i].anyChannel
+            let l = cases[i].locker
             if p !== l {
-                l.getLocker().lock()
+                l.lock()
+                p = l
             }
-            p = l
         }
     }
 
-    private func unlockAll(_ cases: [AnySelect], orders: [Int]) {
-        var p: AnyChannel?
+    private func unlockAll(_ cases: [AnyCase], orders: [Int]) {
+        var p: (AnyObject & NSLocking)?
         for i in orders {
-            let l = cases[i].anyChannel
+            let l = cases[i].locker
             if p !== l {
-                l.getLocker().unlock()
+                l.unlock()
+                p = l
             }
-            p = l
         }
     }
 
-    private func select(_ cases: [AnySelect], nonBlock: Bool = false) -> (() -> ())! {
+    private func select(_ cases: [AnyCase], nonBlock: Bool = false) -> (() -> ())! {
         if cases.isEmpty {
             fatalError("select on empty case") // no need suspend forever
         } else if cases.count > UInt16.max {
@@ -221,9 +188,9 @@ extension Goroutine {
         // random indices
         let pullOrder = randIndex(count: cases.count)
         // avoid deadlock
-        let lockOrder = cases.indices.sorted(by: { i, j in cases[i].anyChannel.address < cases[j].anyChannel.address })
+        let lockOrder = cases.indices.sorted(by: { i, j in cases[i].hash < cases[j].hash })
         // maybe stores with cases? so T can be matched
-        var waitCases: [AnyWait]
+        var waitCases: [AnyGoCase]
         // lock all in this block
         do {
             lockAll(cases, orders: lockOrder)
@@ -243,7 +210,7 @@ extension Goroutine {
 
             // waiting on all cases
             waitCases = pullOrder.map { i in
-                cases[i].enWait(self, index: i)
+                cases[i].enWait(self, i)
             }
 
             // reset, to prepare to be resumed
@@ -259,10 +226,9 @@ extension Goroutine {
                 continue
             }
             let c = cases[i]
-            let locker = c.anyChannel.getLocker()
-            locker.lock()
+            c.locker.lock()
             defer {
-                locker.unlock()
+                c.locker.unlock()
             }
             if w.dequeued {
                 continue
