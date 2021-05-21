@@ -42,12 +42,9 @@ go { _ in
         var loop = true
         while loop {
             $0.select(
-                    Case(ch1, .send(data: Int.random(in: -10...10)) {
-                    }),
-                    Case(ch1, .send(data: Int.random(in: 100...200)) {
-                    }),
-                    Case(ch2, .send(data: Float.random(in: 0...5.0)) {
-                    }),
+                    Case(ch1, .send(data: Int.random(in: -10...10))),
+                    Case(ch1, .send(data: Int.random(in: 100...200))),
+                    Case(ch2, .send(data: Float.random(in: 0...5.0))),
                     Case(qs, .receive { data in
                         loop = false
                         print("stop send cause \(data)")
@@ -58,6 +55,9 @@ go { _ in
 
     go {
         $0.sleep(milliseconds: 1000)
+        $0.select(Case(ch1, .send(data: -1)), default: {
+            print("=====")
+        })
         $0.send(to: qs, data: "times up")
         print("------")
     }

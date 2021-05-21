@@ -1,8 +1,10 @@
 import Foundation
 
 public enum SelectCase<T> {
-    case send(data: T, _ block: () -> ())
-    case receive(_ block: (_ data: T) -> ())
+    case send(data: T, _ block: () -> () = {
+    })
+    case receive(_ block: (_ data: T) -> () = { _ in
+    })
 }
 
 //public struct Case<T> {
@@ -137,7 +139,7 @@ extension Goroutine {
         select(cases, nonBlock: false)()
     }
 
-    public func select(_ cases: AnyCase..., default closure: @autoclosure () -> ()) {
+    public func select(_ cases: AnyCase..., default closure: () -> ()) {
         if let block = select(cases, nonBlock: true) {
             block()
         } else {
