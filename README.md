@@ -4,7 +4,7 @@ Introduce CSP into Swift, inspired by Golang
 
 required Swift 5.0 or higher
 
-This is not a stable version<code>0.0.2</code>, so please do not use it in production environment.  
+This is not a stable version<code>0.1.0</code>, so please do not use it in production environment.  
 Please feel free to summit a PR or an Issue.
 
 ## Introduction
