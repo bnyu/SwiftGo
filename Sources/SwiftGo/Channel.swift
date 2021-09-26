@@ -55,6 +55,7 @@ public final class Chan<T> {
     }
 
     let locker = NSLock()
+    private var closed = false
     private var count = 0
     private var buffer: Array<T?> = []
     private var sendIndex = 0
@@ -126,41 +127,33 @@ public final class Chan<T> {
         return nil
     }
 
-    func receive() -> T? {
+    func receive() -> (T?, Bool) { //return true means no need to wait (received or closed)
         if let w = dequeue(&sendWait) {
-            if var data = w.data {
-                if size > 0 {
-                    data = recvAndSend(data: data)
-                }
+            defer {
                 w.g.resume()
-                return data
-            } else {
-                fatalError("received nil data")
             }
+            var data = w.data!
+            if size > 0 { //full
+                data = recvAndSend(data: data)
+            }
+            return (data, true)
         } else if count > 0 {
-            return dequeueBuff()
+            return (dequeueBuff(), true)
+        } else if closed {
+            return (nil, true)
         }
-        return nil
+        return (nil, false)
     }
-
-    func receive(current g: Goroutine, index: Int = 0) -> T {
-        if let data = receive() {
-            return data
-        }
-        let w: GoCase<T> = GoCase(g)
-        recvWait.enqueue(w)
-        g.suspend()
-        if let data = w.data {
-            return data
-        }
-        fatalError("receive data wrong type")
-    }
-
 
     func send(_ data: T) -> Bool {
+        if closed {
+            fatalError("send to closed channel")
+        }
         if let w = dequeue(&recvWait) {
+            defer {
+                w.g.resume()
+            }
             w.data = data
-            w.g.resume()
             return true
         } else if size > count {
             enqueueBuff(data: data)
@@ -169,12 +162,33 @@ public final class Chan<T> {
         return false
     }
 
-    func send(current g: Goroutine, _ data: T) {
-        if send(data) {
+    func close() {
+        if closed {
+            fatalError("close closed channel")
+        }
+        closed = true
+        if sendWait.first != nil {
+            fatalError("close wait send channel")
+        }
+        if count > 0 {
             return
         }
-        sendWait.enqueue(GoCase(g, data: data))
-        g.suspend()
+        while true {
+            if let w = dequeue(&recvWait) {
+                w.g.resume()
+            } else {
+                break
+            }
+        }
+
     }
 
+}
+
+public func close<T>(_ ch: Chan<T>) {
+    ch.locker.lock()
+    defer {
+        ch.locker.unlock()
+    }
+    ch.close()
 }

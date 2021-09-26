@@ -83,14 +83,15 @@ public final class Goroutine {
         suspend()
     }
 
-    public func receive<T>(from ch: Chan<T>) -> T {
+    public func receive<T>(from ch: Chan<T>) -> T? {
         let gc: GoCase<T>
         do {
             ch.locker.lock()
             defer {
                 ch.locker.unlock()
             }
-            if let data = ch.receive() {
+            let (data, ok) = ch.receive()
+            if ok {
                 return data
             }
             gc = GoCase(self, index: 0)
@@ -98,33 +99,11 @@ public final class Goroutine {
             selectIndex = -1
         }
         suspend()
-        return gc.data!
+        return gc.data
     }
 
-    func send<T>(ch: Chan<T>, data: T) -> Bool {
-        ch.locker.lock()
-        defer {
-            ch.locker.unlock()
-        }
-        if ch.send(data) {
-            return true
-        }
-        return false
-    }
-
-    func receive<T>(ch: Chan<T>) -> T? {
-        ch.locker.lock()
-        defer {
-            ch.locker.unlock()
-        }
-        if let data = ch.receive() {
-            return data
-        }
-        return nil
-    }
-
-    public func sleep(milliseconds: Int) {
-        _ = semaphore.wait(timeout: DispatchTime.now() + DispatchTimeInterval.milliseconds(milliseconds))
+    public func sleep(_ interval: DispatchTimeInterval) {
+        _ = semaphore.wait(timeout: DispatchTime.now() + interval)
     }
 
 }

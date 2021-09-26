@@ -3,7 +3,7 @@ import Foundation
 public enum SelectCase<T> {
     case send(data: T, _ block: () -> () = {
     })
-    case receive(_ block: (_ data: T) -> () = { _ in
+    case receive(_ block: (_ data: T?) -> () = { _ in
     })
 }
 
@@ -89,7 +89,8 @@ public struct AnyCase {
                 ch.recvWait.remove(gc as! GoCase<T>)
             }
             trySelect = {
-                if let data = ch.receive() {
+                let (data, ok) = ch.receive()
+                if ok {
                     return {
                         block(data)
                     }
@@ -98,7 +99,7 @@ public struct AnyCase {
             }
             beSelected = { gc in
                 {
-                    block((gc as! GoCase<T>).data!)
+                    block((gc as! GoCase<T>).data)
                 }
             }
             waitSelected = { g in
@@ -121,11 +122,11 @@ extension Goroutine {
 
     public func select(_ c: Case, default closure: () -> ()) {
         c.locker.lock()
-        if let block = c.trySelect() {
-            c.locker.unlock()
+        let block = c.trySelect()
+        c.locker.unlock()
+        if let block = block {
             block()
         } else {
-            c.locker.unlock()
             closure()
         }
     }
@@ -193,7 +194,7 @@ extension Goroutine {
         // avoid deadlock
         let lockOrder = cases.indices.sorted(by: { i, j in cases[i].hash < cases[j].hash })
         // maybe stores with cases? so T can be matched
-        var waitCases: [AnyGoCase?]
+        let waitCases: [AnyGoCase]
         // lock all in this block
         do {
             lockAll(cases, orders: lockOrder)
@@ -212,9 +213,8 @@ extension Goroutine {
             }
 
             // waiting on all cases
-            waitCases = [AnyGoCase?].init(repeating: nil, count: cases.count)
-            for i in pullOrder {
-                waitCases[i] = cases[i].enWait(self, i)
+            waitCases = cases.indices.map { i in
+                cases[i].enWait(self, i)
             }
 
             // reset, to prepare to be resumed
@@ -225,7 +225,7 @@ extension Goroutine {
         // resumed by another goroutine. it may call resume before than this call suspend(it's ok)
         // may multi cases dequeued but only one can call resume. need remove other waiting
         for i in lockOrder {
-            let w = waitCases[i]!
+            let w = waitCases[i]
             if w.dequeued {
                 continue
             }
@@ -241,7 +241,7 @@ extension Goroutine {
         }
 
         let c = cases[selectIndex]
-        let w = waitCases[selectIndex]!
+        let w = waitCases[selectIndex]
         return c.beSelected(w)
     }
 }
