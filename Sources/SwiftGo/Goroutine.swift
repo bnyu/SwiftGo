@@ -33,7 +33,10 @@ public final class Goroutine {
 
     init(closure: @escaping (Goroutine) -> ()) {
         semaphore = DispatchSemaphore(value: 0)
-        execution = DispatchWorkItem(block: { closure(self) })
+        execution = DispatchWorkItem(block: {
+            closure(self)
+            self.execution = nil
+        })
     }
 
     func start() {
