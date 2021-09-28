@@ -87,7 +87,7 @@ public final class Goroutine {
         suspend()
     }
 
-    public func receive<T>(from ch: Chan<T>) -> T? {
+    public func receive<T>(from ch: Chan<T>) -> T! {
         let gc: GoCase<T>
         do {
             ch.locker.lock()

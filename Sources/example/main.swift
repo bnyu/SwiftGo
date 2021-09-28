@@ -11,63 +11,85 @@ Backtrace.install()
 
 print("Hello SwiftGo")
 
-let ch1 = Chan<Int>(10)
-let ch2 = Chan<Float>()
-let qs = Chan<String>()
-let qr = Chan<String>()
+let qb = Chan<Bool>(2)
+let qc = Chan<Void>()
 
 go { _ in
+    let ch1 = Chan<Float>(20)
+    let ch2 = Chan<[Int]>(2)
+
     print("start")
     go {
-        print("start receive data")
+        print("start receive")
         var loop = true
         while loop {
             $0.select(
                     Case(ch1, .receive { data in
-                        print("\(data) <-")
+                        print(data!)
                     }),
                     Case(ch2, .receive { data in
-                        print("\(data) <-")
+                        print(data!)
                     }),
-                    Case(qr, .receive { data in
+                    Case(qc, .receive { _ in
                         loop = false
-                        print("stop receive cause \(data)")
                     })
             )
         }
+        print("stop receive")
+        $0.send(to: qb, data: true)
     }
 
     go {
-        print("start send data")
+        print("start send")
         var loop = true
         while loop {
             $0.select(
-                    Case(ch1, .send(data: Int.random(in: -10...10))),
-                    Case(ch1, .send(data: Int.random(in: 100...200))),
-                    Case(ch2, .send(data: Float.random(in: 0...5.0))),
-                    Case(qs, .receive { data in
+                    Case(ch1, .send(data: Float.random(in: 0..<100))),
+                    Case(ch2, .send(data: [Int.random(in: 0...1000)])),
+                    Case(ch1, .send(data: Float.random(in: -10...0))),
+                    Case(qc, .receive { _ in
                         loop = false
-                        print("stop send cause \(data)")
                     })
             )
         }
+        print("stop send")
+        $0.send(to: qb, data: true)
     }
 
     go {
-        $0.sleep(milliseconds: 1000)
-        $0.select(Case(ch1, .send(data: -1)), default: {
-            print("=====")
+        let x: Float = $0.receive(from: ch1)
+        $0.sleep(.milliseconds(100))
+        $0.send(to: ch2, data: [Int(x + x), Int(x * x)])
+        $0.sleep(.milliseconds(100))
+        $0.select(Case(ch1, .send(data: 0)), default: {
+            print()
         })
-        $0.send(to: qs, data: "times up")
-        print("------")
+        $0.sleep(.milliseconds(200))
+        close(qc)
+        if $0.receive(from: qb) && $0.receive(from: qb) {
+            print("------")
+            $0.select(Case(ch2, .receive {
+                if let data = $0 {
+                    print("\(data)")
+                }
+            }), default: {
+                print()
+            })
+            go { g in
+                g.sleep(.seconds(2))
+                print("done")
+                close(ch1)
+            }
+            while true {
+                guard let n = $0.receive(from: ch1) else {
+                    break
+                }
+                print(n)
+            }
+        }
+        print("finish")
     }
 }
 
-go {
-    $0.sleep(milliseconds: 1000)
-    $0.send(to: qr, data: "times up")
-    print("------")
-}
 
-
-Thread.sleep(forTimeInterval: 1000)
+Thread.sleep(forTimeInterval: 3)
