@@ -3,6 +3,8 @@ import Dispatch
 
 //import Atomics
 
+let goroutines = DispatchQueue(label: "goroutines", qos: .background, attributes: .concurrent)
+
 final class GoCase<T> {
     weak var prev: GoCase?
     var next: GoCase?
@@ -40,10 +42,9 @@ public final class Goroutine {
     }
 
     func start() {
-        let queue = DispatchQueue.global()
-        semaphore.setTarget(queue: queue)
+        semaphore.setTarget(queue: goroutines)
         semaphore.activate()
-        queue.async(execute: execution)
+        goroutines.async(execute: execution)
     }
 
     func suspend() {
