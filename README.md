@@ -4,7 +4,7 @@ Introduce CSP into Swift, inspired by Golang
 
 required Swift 5.0 or higher
 
-This is not a stable version<code>0.1.0</code>, so please do not use it in production environment.  
+This is not a stable version<code>0.1.1</code>, so please do not use it in production environment.  
 Please feel free to summit a PR or an Issue.
 
 ## Introduction
@@ -12,6 +12,7 @@ Please feel free to summit a PR or an Issue.
 - Goroutines (lighter than threads)
 - FIFO channel (with or without buffer)
 - Select on channels (with or without default)
+- Close the channel
 
 ## Usage
 
@@ -46,9 +47,9 @@ go {
 }
 
 go {
-    // let data = <-ch
+    // var data = <-ch
     let data = $0.receive(from: ch)
-    print("received \(data)")
+    print("received \(data!)")
 }
 ```
 
@@ -66,7 +67,7 @@ go {
                 print("send to ch2")
             }),
             Case(ch3, .receive { data in
-                print("receive str: \(data)")
+                print("receive str: \(data!)")
             })
     )
     // continue do something here
@@ -86,9 +87,10 @@ go {
     // continue do something here
 }
 ```
+[example code](Sources/example/main.swift)
 
 ## Dependencies
-It uses [GCD](https://github.com/apple/swift-corelibs-libdispatch) to dispatch `goroutine` instead of `Thread`.
+It uses [Dispatch](https://github.com/apple/swift-corelibs-libdispatch) to dispatch `goroutines` instead of `Threads`.
 Similar to the role of GMP in Golang.  
 It will use [Atomics](https://github.com/apple/swift-atomics) to replace `NSLocker` for select race(which does not support Windows yet)
 
