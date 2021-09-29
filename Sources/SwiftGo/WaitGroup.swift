@@ -12,7 +12,7 @@ public struct WaitGroup {
     let semaphore: DispatchSemaphore
 
     public init(_ n: Int) {
-        semaphore = DispatchSemaphore(value: 1-n)
+        semaphore = DispatchSemaphore(value: 1 - n)
         semaphore.setTarget(queue: goroutines)
         semaphore.activate()
     }
@@ -23,6 +23,10 @@ public struct WaitGroup {
 
     public func wait() {
         semaphore.wait()
+    }
+
+    public func wait(timeout: DispatchTime) -> DispatchTimeoutResult {
+        semaphore.wait(timeout: timeout)
     }
 
 }

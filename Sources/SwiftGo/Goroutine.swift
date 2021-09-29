@@ -63,11 +63,6 @@ public final class Goroutine {
         semaphore.signal()
     }
 
-    func cancel() {
-        execution?.cancel()
-        execution = nil
-    }
-
     func trySelect(index: Int) -> Bool {
         if selectIndex >= 0 {
             return false
@@ -124,6 +119,18 @@ public final class Goroutine {
     }
 
 }
+
+extension Goroutine {
+    func cancel() {
+        execution?.cancel()
+        execution = nil
+    }
+
+    var isCanceled: Bool { //canceled or done
+        execution?.isCancelled ?? true
+    }
+}
+
 
 public func go(_ closure: @escaping (Goroutine) -> ()) {
     Goroutine(closure: closure).start()

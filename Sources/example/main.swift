@@ -22,7 +22,11 @@ go {
         while loop {
             $0.select(
                     Case(ch1, .receive { data in
-                        print(data!)
+                        if let n = data {
+                            print(n)
+                        } else {
+                            loop = false
+                        }
                     }),
                     Case(ch2, .receive { data in
                         print(data!)
@@ -52,15 +56,24 @@ go {
         $0.send(to: qb, data: true)
     }
 
-    let x: Float = $0.receive(from: ch1)
-    $0.sleep(.milliseconds(100))
-    $0.send(to: ch2, data: [Int(x + x), Int(x * x)])
-    $0.sleep(.milliseconds(100))
-    $0.select(Case(ch1, .send(data: 0)), default: {
-        print()
-    })
-    $0.sleep(.milliseconds(200))
-    close(qc)
+    go {
+        _ = $0.receive(from: Timer.after(.seconds(1)))
+        let x: Float = $0.receive(from: ch1)
+        $0.sleep(.milliseconds(100))
+        $0.send(to: ch2, data: [Int(x + x), Int(x * x)])
+        $0.sleep(.milliseconds(100))
+        let t = Timer(duration: .seconds(1))
+        defer {
+            t.stop()
+        }
+        $0.select(
+                Case(ch1, .send(data: 0)),
+                Case(t.c, .receive {
+                    print($0!)
+                }))
+        close(qc)
+    }
+
     if $0.receive(from: qb) {
         print("------")
         $0.select(Case(ch2, .receive {
