@@ -2,19 +2,16 @@
 // Created by xuyue on 2021/5/1.
 //
 
-import Backtrace
-import Foundation
 import SwiftGo
 
-// debug with lldb
-Backtrace.install()
-
 print("Hello SwiftGo")
+
+let wg = WaitGroup(1)
 
 let qb = Chan<Bool>(2)
 let qc = Chan<Void>()
 
-go { _ in
+go {
     let ch1 = Chan<Float>(20)
     let ch2 = Chan<[Int]>(2)
 
@@ -36,7 +33,6 @@ go { _ in
             )
         }
         print("stop receive")
-        $0.send(to: qb, data: true)
     }
 
     go {
@@ -56,40 +52,38 @@ go { _ in
         $0.send(to: qb, data: true)
     }
 
-    go {
-        let x: Float = $0.receive(from: ch1)
-        $0.sleep(.milliseconds(100))
-        $0.send(to: ch2, data: [Int(x + x), Int(x * x)])
-        $0.sleep(.milliseconds(100))
-        $0.select(Case(ch1, .send(data: 0)), default: {
+    let x: Float = $0.receive(from: ch1)
+    $0.sleep(.milliseconds(100))
+    $0.send(to: ch2, data: [Int(x + x), Int(x * x)])
+    $0.sleep(.milliseconds(100))
+    $0.select(Case(ch1, .send(data: 0)), default: {
+        print()
+    })
+    $0.sleep(.milliseconds(200))
+    close(qc)
+    if $0.receive(from: qb) {
+        print("------")
+        $0.select(Case(ch2, .receive {
+            if let data = $0 {
+                print("\(data)")
+            }
+        }), default: {
             print()
         })
-        $0.sleep(.milliseconds(200))
-        close(qc)
-        if $0.receive(from: qb) && $0.receive(from: qb) {
-            print("------")
-            $0.select(Case(ch2, .receive {
-                if let data = $0 {
-                    print("\(data)")
-                }
-            }), default: {
-                print()
-            })
-            go { g in
-                g.sleep(.seconds(2))
-                print("done")
-                close(ch1)
-            }
-            while true {
-                guard let n = $0.receive(from: ch1) else {
-                    break
-                }
-                print(n)
-            }
+        go { _ in
+            close(ch1)
         }
-        print("finish")
+        while true {
+            guard let n = $0.receive(from: ch1) else {
+                break
+            }
+            print(n)
+        }
     }
+    print("finish")
+    wg.done()
 }
 
-
-Thread.sleep(forTimeInterval: 3)
+print("wait")
+wg.wait()
+print("exit")

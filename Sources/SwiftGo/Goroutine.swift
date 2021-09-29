@@ -1,3 +1,11 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftGo open source project
+// Copyright (c) 2021 XuYue and the SwiftGo project authors
+// Licensed under Apache License v2.0
+//
+//===----------------------------------------------------------------------===//
+
 import Foundation
 import Dispatch
 
@@ -53,6 +61,11 @@ public final class Goroutine {
 
     func resume() {
         semaphore.signal()
+    }
+
+    func cancel() {
+        execution?.cancel()
+        execution = nil
     }
 
     func trySelect(index: Int) -> Bool {
