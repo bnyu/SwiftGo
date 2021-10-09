@@ -35,6 +35,7 @@ final class GoCase<T> {
 
 public final class Goroutine {
     private let locker = NSLock() //todo temp
+    var isCancelled = false
     var selectIndex = -1
     var rands = Rand()
 
@@ -122,12 +123,11 @@ public final class Goroutine {
 
 extension Goroutine {
     func cancel() {
-        execution?.cancel()
-        execution = nil
-    }
-
-    var isCanceled: Bool { //canceled or done
-        execution?.isCancelled ?? true
+        if !isCancelled {
+            isCancelled = true
+            execution?.cancel()
+            execution = nil
+        }
     }
 }
 

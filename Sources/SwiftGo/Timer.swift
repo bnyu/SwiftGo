@@ -18,7 +18,7 @@ public struct Timer {
         c = ch
         g = Goroutine { g in
             g.sleep(duration)
-            if g.isCanceled {
+            if g.isCancelled {
                 return
             }
             g.send(to: ch, data: DispatchTime.now())
@@ -27,8 +27,8 @@ public struct Timer {
     }
 
     public func stop() {
-        g.cancel()
-        g.resume()
+        g.cancel() //cancel send
+        g.resume() //awake sleep
     }
 
     public static func after(_ duration: DispatchTimeInterval) -> Chan<DispatchTime> {
@@ -46,7 +46,7 @@ public struct Ticker {
         g = Goroutine { g in
             while true {
                 g.sleep(duration)
-                if g.isCanceled {
+                if g.isCancelled {
                     break
                 }
                 g.select(Case(ch, .send(data: DispatchTime.now())), default: {})
@@ -61,6 +61,6 @@ public struct Ticker {
     }
 
     public static func tick(_ duration: DispatchTimeInterval) -> Chan<DispatchTime> {
-        Timer(duration: duration).c
+        Ticker(duration: duration).c
     }
 }
