@@ -1,3 +1,11 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftGo open source project
+// Copyright (c) 2021 XuYue and the SwiftGo project authors
+// Licensed under Apache License v2.0
+//
+//===----------------------------------------------------------------------===//
+
 import Foundation
 import Dispatch
 
@@ -111,6 +119,18 @@ public final class Goroutine {
     }
 
 }
+
+extension Goroutine {
+    func cancel() {
+        execution?.cancel()
+        execution = nil
+    }
+
+    var isCanceled: Bool { //canceled or done
+        execution?.isCancelled ?? true
+    }
+}
+
 
 public func go(_ closure: @escaping (Goroutine) -> ()) {
     Goroutine(closure: closure).start()

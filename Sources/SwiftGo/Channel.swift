@@ -1,3 +1,11 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftGo open source project
+// Copyright (c) 2021 XuYue and the SwiftGo project authors
+// Licensed under Apache License v2.0
+//
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 public final class Chan<T> {
@@ -14,12 +22,13 @@ public final class Chan<T> {
                     value.prev = nil
                     value.next = nil
                 } else {
-                    prev.next = nil
                     last = prev
+                    prev.next = nil
                     value.prev = nil
                 }
             } else if let next = value.next {
                 first = next
+                next.prev = nil
                 value.next = nil
             } else if first === value {
                 first = nil
@@ -32,9 +41,9 @@ public final class Chan<T> {
                 return nil
             }
             if let y = x.next {
+                first = y
                 x.next = nil
                 y.prev = nil
-                first = y
             } else {
                 first = nil
                 last = nil

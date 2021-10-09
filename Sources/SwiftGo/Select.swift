@@ -1,3 +1,11 @@
+//===----------------------------------------------------------------------===//
+//
+// This source file is part of the SwiftGo open source project
+// Copyright (c) 2021 XuYue and the SwiftGo project authors
+// Licensed under Apache License v2.0
+//
+//===----------------------------------------------------------------------===//
+
 import Foundation
 
 public enum SelectCase<T> {
