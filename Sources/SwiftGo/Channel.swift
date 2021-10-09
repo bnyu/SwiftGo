@@ -22,12 +22,13 @@ public final class Chan<T> {
                     value.prev = nil
                     value.next = nil
                 } else {
-                    prev.next = nil
                     last = prev
+                    prev.next = nil
                     value.prev = nil
                 }
             } else if let next = value.next {
                 first = next
+                next.prev = nil
                 value.next = nil
             } else if first === value {
                 first = nil
@@ -40,9 +41,9 @@ public final class Chan<T> {
                 return nil
             }
             if let y = x.next {
+                first = y
                 x.next = nil
                 y.prev = nil
-                first = y
             } else {
                 first = nil
                 last = nil
